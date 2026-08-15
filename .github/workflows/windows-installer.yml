@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout
@@ -56,17 +56,45 @@ jobs:
       - name: Build frontend and NSIS installer
         run: npm run tauri -- build --bundles nsis --no-sign
 
-      - name: Collect installer
+      - name: Create single distribution EXE
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path installer\dist | Out-Null
-          $setup = Get-ChildItem src-tauri\target\release\bundle\nsis -Filter '*-setup.exe' | Select-Object -First 1
-          if (-not $setup) { throw 'NSIS setup.exe was not produced.' }
-          Copy-Item $setup.FullName installer\dist\$($setup.Name) -Force
-          Get-FileHash installer\dist\$($setup.Name) -Algorithm SHA256 | Format-List
+          $nsisDir = "src-tauri\target\release\bundle\nsis"
+          $setup = Get-ChildItem $nsisDir -Filter "*.exe" | Select-Object -First 1
+          if (-not $setup) { throw "NSIS installer EXE was not produced." }
 
-      - name: Upload installer artifact
+          New-Item -ItemType Directory -Force -Path installer\dist | Out-Null
+          Remove-Item installer\dist\* -Force -ErrorAction SilentlyContinue
+
+          $final = "installer\dist\E.V.-Enhanced-Voice-Setup.exe"
+          Copy-Item $setup.FullName $final -Force
+
+          $hash = Get-FileHash $final -Algorithm SHA256
+          "SHA256: $($hash.Hash)" | Set-Content installer\dist\E.V.-Enhanced-Voice-Setup.sha256
+          Write-Host "Created: $final"
+          Write-Host "SHA256: $($hash.Hash)"
+
+      - name: Upload single EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EV-Windows-Installer
-          path: installer/dist/*-setup.exe
+          name: E.V.-Enhanced-Voice-Setup
+          path: installer/dist/E.V.-Enhanced-Voice-Setup.exe
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Publish EXE to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/dist/E.V.-Enhanced-Voice-Setup.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          name: E.V. ${​{ github.ref_name }}
+          body: |
+            # E.V. — Enhanced Voice
+
+            Windows installer for the local-first E.V. desktop AI assistant.
+
+            **Installer:** `E.V.-Enhanced-Voice-Setup.exe`
+
+            The installer is the Windows setup wizard itself. Double-click the EXE to install E.V.
