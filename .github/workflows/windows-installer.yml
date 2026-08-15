@@ -89,7 +89,7 @@ jobs:
           files: installer/dist/E.V.-Enhanced-Voice-Setup.exe
           fail_on_unmatched_files: true
           generate_release_notes: true
-          name: E.V. ${​{ github.ref_name }}
+          name: E.V. ${{ github.ref_name }}
           body: |
             # E.V. — Enhanced Voice
 
