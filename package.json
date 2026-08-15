@@ -12,7 +12,8 @@
     "tauri:build": "powershell -ExecutionPolicy Bypass -File scripts/tauri-build.ps1",
     "backend:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-backend.ps1",
     "backend:run": "powershell -ExecutionPolicy Bypass -File scripts/run-backend.ps1",
-    "backend:build": "powershell -ExecutionPolicy Bypass -File scripts/build-backend.ps1"
+    "backend:build": "powershell -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
+    "check:tauri": "node scripts/check-tauri.js"
   },
   "dependencies": {
     "@tauri-apps/api": "2.6.3",
