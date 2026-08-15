@@ -464,3 +464,5 @@ Send that `*-setup.exe` file to each Windows x64 device. The Tauri NSIS installe
 For automated builds, this project also includes `.github/workflows/windows-installer.yml`. A Windows GitHub Actions runner creates the real `*-setup.exe` artifact for a tagged release or a manual workflow run.
 
 The installer does not silently install a multi-gigabyte AI model. Each device can install Ollama locally and choose its own local model. E.V. communicates with Ollama locally and does not require a cloud API.
+#   E . V - A s s i s t a n t  
+ 
