@@ -38,11 +38,21 @@ def get_status(endpoint: str) -> dict[str, Any]:
         }
 
 
-def chat(endpoint: str, model: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None, images: list[str] | None = None) -> dict[str, Any]:
+def chat(
+    endpoint: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    images: list[str] | None = None,
+) -> dict[str, Any]:
+    request_messages = messages
+    if not messages or messages[0].get("role") != "system":
+        request_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+
     payload: dict[str, Any] = {
         "model": model,
         "stream": False,
-        "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *messages],
+        "messages": request_messages,
         "options": {"temperature": 0.4},
     }
     if tools:
