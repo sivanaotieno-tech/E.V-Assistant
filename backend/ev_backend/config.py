@@ -14,6 +14,8 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 OLLAMA_ENDPOINT = os.getenv("EV_OLLAMA_ENDPOINT", "http://127.0.0.1:11434").rstrip("/")
 BACKEND_HOST = os.getenv("EV_BACKEND_HOST", "127.0.0.1")
 BACKEND_PORT = int(os.getenv("EV_BACKEND_PORT", "8765"))
+EV_ACCESS_TOKEN = os.getenv("EV_ACCESS_TOKEN", "").strip()
+EV_ALLOWED_ORIGINS = [item.strip() for item in os.getenv("EV_ALLOWED_ORIGINS", "http://localhost:1420,tauri://localhost,http://tauri.localhost").split(",") if item.strip()]
 
 DEFAULT_SETTINGS = {
     "language": "auto",
