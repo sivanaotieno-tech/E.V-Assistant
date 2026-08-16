@@ -25,36 +25,34 @@ fn spawn_backend(app: &tauri::AppHandle) -> Result<Child, String> {
     let packaged = if packaged.exists() { packaged } else { packaged_alt };
     if packaged.exists() {
         let data_dir = std::env::var("LOCALAPPDATA").map(PathBuf::from)
-            .unwrap_or_else(|_| std::env::temp_dir())
-            .join("E.V.").join("data");
+            .unwrap_or_else(|_| std::env::temp_dir()).join("E.V.").join("data");
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-        return Command::new(packaged)
-            .env("EV_DATA_DIR", data_dir)
+        return Command::new(packaged).env("EV_DATA_DIR", data_dir)
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
             .spawn().map_err(|e| format!("Could not start packaged backend: {e}"));
     }
-
     let project_root = std::env::current_dir().map_err(|e| e.to_string())?;
     let server = project_root.join("backend").join("server.py");
     if server.exists() {
         let python = project_root.join(".venv").join("Scripts").join("python.exe");
         let interpreter = if python.exists() { python } else { PathBuf::from("python") };
-        return Command::new(interpreter).arg(server)
-            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+        return Command::new(interpreter).arg(server).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
             .spawn().map_err(|e| format!("Could not start Python backend: {e}"));
     }
-
     Err("E.V. backend executable/source was not found.".to_string())
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default().plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        None,
+    ));
+
+    builder
         .setup(|app| {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
-                use tauri_plugin_autostart::MacosLauncher;
                 app.manage(BackendProcess(Mutex::new(None)));
-                app.handle().plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))?;
                 match spawn_backend(app.handle()) {
                     Ok(child) => {
                         if let Some(state) = app.try_state::<BackendProcess>() {
@@ -63,27 +61,18 @@ pub fn run() {
                     }
                     Err(error) => eprintln!("E.V. backend: {error}"),
                 }
-
                 let show = MenuItem::with_id(app, "show", "Show E.V.", true, None::<&str>)?;
                 let quit = MenuItem::with_id(app, "quit", "Quit E.V.", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&show, &quit])?;
-                TrayIconBuilder::new()
-                    .menu(&menu)
-                    .tooltip("E.V. — Enhanced Voice")
+                TrayIconBuilder::new().menu(&menu).tooltip("E.V. — Enhanced Voice")
                     .on_menu_event(|app, event| match event.id.as_ref() {
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show(); let _ = window.unminimize(); let _ = window.set_focus();
-                            }
-                        }
+                        "show" => if let Some(window) = app.get_webview_window("main") { let _ = window.show(); let _ = window.unminimize(); let _ = window.set_focus(); },
                         "quit" => app.exit(0),
                         _ => {}
                     })
                     .on_tray_icon_event(|tray, event| {
                         if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                            if let Some(window) = tray.app_handle().get_webview_window("main") {
-                                let _ = window.show(); let _ = window.unminimize(); let _ = window.set_focus();
-                            }
+                            if let Some(window) = tray.app_handle().get_webview_window("main") { let _ = window.show(); let _ = window.unminimize(); let _ = window.set_focus(); }
                         }
                     })
                     .build(app)?;
@@ -106,9 +95,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app_handle.try_state::<BackendProcess>() {
                     if let Ok(mut slot) = state.0.lock() {
-                        if let Some(mut child) = slot.take() {
-                            let _ = child.kill(); let _ = child.wait_timeout(Duration::from_millis(300));
-                        }
+                        if let Some(mut child) = slot.take() { let _ = child.kill(); let _ = child.wait_timeout(Duration::from_millis(300)); }
                     }
                 }
             }
@@ -118,18 +105,11 @@ pub fn run() {
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-trait ChildWaitTimeout {
-    fn wait_timeout(&mut self, timeout: Duration) -> std::io::Result<Option<std::process::ExitStatus>>;
-}
-
+trait ChildWaitTimeout { fn wait_timeout(&mut self, timeout: Duration) -> std::io::Result<Option<std::process::ExitStatus>>; }
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl ChildWaitTimeout for Child {
     fn wait_timeout(&mut self, timeout: Duration) -> std::io::Result<Option<std::process::ExitStatus>> {
         let start = std::time::Instant::now();
-        loop {
-            if let Some(status) = self.try_wait()? { return Ok(Some(status)); }
-            if start.elapsed() >= timeout { return Ok(None); }
-            std::thread::sleep(Duration::from_millis(25));
-        }
+        loop { if let Some(status) = self.try_wait()? { return Ok(Some(status)); } if start.elapsed() >= timeout { return Ok(None); } std::thread::sleep(Duration::from_millis(25)); }
     }
 }
