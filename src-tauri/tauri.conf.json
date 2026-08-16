@@ -14,9 +14,9 @@
     "windows": [
       {
         "label": "main",
-        "title": "E.V. \u2014 Enhanced Voice",
+        "title": "E.V. — Enhanced Voice",
         "width": 1600,
-        "height": 1000,
+        "height": 960,
         "minWidth": 1100,
         "minHeight": 760,
         "resizable": true,
