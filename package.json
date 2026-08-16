@@ -16,13 +16,13 @@
     "check:tauri": "node scripts/check-tauri.js"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.6.3",
+    "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.6.3",
+    "@tauri-apps/cli": "2.11.4",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^5.0.2",
