@@ -1,6 +1,33 @@
 import type { BackendConfig, ChatMessage, MemoryItem, OllamaStatus, SystemMetrics, ToolConfirmation } from '../types';
 
-const BASE = 'http://127.0.0.1:8765';
+const DEFAULT_BASE = 'http://127.0.0.1:8765';
+
+function resolveBase() {
+  const configured = (import.meta.env.VITE_EV_BACKEND_URL as string | undefined)?.trim();
+  if (configured) return configured.replace(/\/$/, '');
+
+  const saved = window.localStorage.getItem('ev.backendUrl')?.trim();
+  if (saved) return saved.replace(/\/$/, '');
+
+  const query = new URLSearchParams(window.location.search).get('evBackend')?.trim();
+  if (query) {
+    window.localStorage.setItem('ev.backendUrl', query.replace(/\/$/, ''));
+    return query.replace(/\/$/, '');
+  }
+
+  return DEFAULT_BASE;
+}
+
+let BASE = resolveBase();
+
+export function setBackendUrl(url: string) {
+  BASE = url.trim().replace(/\/$/, '') || DEFAULT_BASE;
+  window.localStorage.setItem('ev.backendUrl', BASE);
+}
+
+export function getBackendUrl() {
+  return BASE;
+}
 
 async function request<T>(path: string, init?: RequestInit, retries = 0): Promise<T> {
   let response: Response | undefined;
