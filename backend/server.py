@@ -13,21 +13,23 @@ from pydantic import BaseModel, Field
 
 from ev_backend import db
 from ev_backend.agent import run_agent
-from ev_backend.config import BACKEND_HOST, BACKEND_PORT, OLLAMA_ENDPOINT
+from ev_backend.config import BACKEND_HOST, BACKEND_PORT, EV_ALLOWED_ORIGINS, OLLAMA_ENDPOINT
 from ev_backend.ollama import chat as ollama_chat, get_status
+from ev_backend.security import companion_auth
 from ev_backend.speech import synthesize, transcribe_file, voices
 from ev_backend.system import collect_metrics, list_processes
 from ev_backend.tools import execute, preview_tool_call
 
 
 db.init_db()
-app = FastAPI(title="E.V. Local Backend", version="1.0.0")
+app = FastAPI(title="E.V. Local Backend", version="1.1.0")
+app.middleware("http")(companion_auth)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:1420", "tauri://localhost", "http://tauri.localhost"],
+    allow_origins=EV_ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "Authorization"],
 )
 
 
@@ -67,7 +69,7 @@ class ScreenAnalyzeRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "service": "E.V. Local Backend", "pid": os.getpid()}
+    return {"ok": True, "service": "E.V. Local Backend", "pid": os.getpid(), "networkMode": BACKEND_HOST != "127.0.0.1"}
 
 
 @app.get("/api/system")
@@ -151,12 +153,7 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
     db.add_message("user", payload.text)
     history = payload.history[-30:]
     result = run_agent(str(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT), model, payload.text, payload.language, history, payload.approvedCalls)
-    return {
-        "content": result.content,
-        "confirmations": result.confirmations,
-        "events": result.events,
-        "model": model,
-    }
+    return {"content": result.content, "confirmations": result.confirmations, "events": result.events, "model": model}
 
 
 @app.post("/api/tools/preview")
@@ -200,8 +197,7 @@ def speak(text: str, voiceEngine: str = "auto", voice: str = "") -> FileResponse
 
 @app.post("/api/screen")
 def screen() -> dict[str, Any]:
-    result = execute("screenshot", {})
-    return result
+    return execute("screenshot", {})
 
 
 @app.post("/api/screen/analyze")
