@@ -1,4 +1,4 @@
-import type { BackendConfig, ChatMessage, MemoryItem, OllamaStatus, SystemMetrics, ToolConfirmation } from '../types';
+import type { BackendConfig, ChatMessage, ComponentStatus, MemoryItem, OllamaStatus, SystemMetrics, ToolConfirmation } from '../types';
 
 const DEFAULT_BASE = 'http://127.0.0.1:8765';
 
@@ -68,6 +68,8 @@ export const api = {
   health: () => request<{ ok: boolean }>('/health', undefined, 6),
   system: () => request<SystemMetrics>('/api/system', undefined, 2),
   ollama: () => request<OllamaStatus>('/api/ollama/status', undefined, 2),
+  ensureOllama: () => request<OllamaStatus>('/api/ollama/ensure', { method: 'POST' }, 0),
+  components: () => request<ComponentStatus>('/api/components/status', undefined, 2),
   settings: () => request<BackendConfig>('/api/settings', undefined, 2),
   updateSettings: (values: Partial<BackendConfig>) => request<BackendConfig>('/api/settings', { method: 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ values }) }),
   messages: () => request<ChatMessage[]>('/api/messages', undefined, 1),
