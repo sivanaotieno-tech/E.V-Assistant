@@ -4,6 +4,7 @@ import App from './App';
 import { BootGate } from './components/BootGate';
 import './styles/performance.css';
 import './styles/mobile.css';
+import './styles/production.css';
 import './services/ollama-bootstrap';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
