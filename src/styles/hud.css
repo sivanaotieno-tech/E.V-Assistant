@@ -217,6 +217,11 @@ button { cursor: pointer; }
 .hud-button.primary { color:#00ffad; border-color:rgba(0,255,173,.4); }
 .hud-button.active { color:var(--green); border-color:var(--green); box-shadow:0 0 14px rgba(0,255,119,.15); }
 .hud-button.large { padding:0 27px; }
+.hud-button:focus-visible,
+.icon-button:focus-visible,
+.command-bar input:focus-visible,
+.settings-grid select:focus-visible,
+.settings-grid input:focus-visible { outline:1px solid rgba(0,255,174,.8); outline-offset:2px; }
 
 .console-corner { position:absolute; width:11px; height:11px; border-color:#00dfff; border-style:solid; z-index:3; opacity:.75; }
 .console-corner-tl{top:7px;left:7px;border-width:1px 0 0 1px}.console-corner-tr{top:7px;right:7px;border-width:1px 1px 0 0}.console-corner-bl{bottom:7px;left:7px;border-width:0 0 1px 1px}.console-corner-br{bottom:7px;right:7px;border-width:0 1px 1px 0}
@@ -235,15 +240,9 @@ button { cursor: pointer; }
 .screenshot-box{width:min(1200px,92vw);max-height:90vh;padding:0 0 14px;border:1px solid rgba(0,226,255,.35);background:rgba(3,10,18,.98);display:flex;flex-direction:column;align-items:flex-end}.screenshot-box img{max-width:100%;max-height:72vh;object-fit:contain;padding:12px}.screenshot-box>.hud-button{margin-right:12px}
 .first-run{background:radial-gradient(circle,rgba(0,208,255,.09),rgba(1,5,10,.99) 60%)}.first-run-box{width:min(620px,88vw);padding:36px;border:1px solid rgba(0,233,255,.30);background:rgba(2,9,16,.98);text-align:center;box-shadow:0 0 70px rgba(0,220,255,.08)}.first-run-logo{font-size:64px;font-weight:800;letter-spacing:.2em;color:#00eaff;text-shadow:0 0 30px rgba(0,238,255,.35)}.first-run-title{margin-top:8px;color:var(--green);letter-spacing:.25em;font-size:14px}.first-run-subtitle{margin-top:9px;color:#506c7d;letter-spacing:.16em;font-size:9px}.boot-sequence{display:flex;flex-direction:column;gap:7px;margin:22px 0;text-align:left;padding:13px;border:1px solid rgba(0,205,255,.10)}.boot-sequence span{font-size:10px;color:#6a92a4}.first-run-box p{color:#557386;font-size:10px;line-height:1.6;margin-bottom:20px}
 
+/* The dedicated BootGate owns first-run navigation. App.tsx still contains the legacy first-run panel for backward compatibility;
+   keep it hidden so there is only one ENTER E.V. SYSTEM surface and no competing state machines. */
+.hud-shell > .first-run { display:none !important; }
+
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes processPulse{to{transform:scale(1.025)}}
-
-@media (min-width:1920px){
-  .hud-layout{grid-template-columns:360px minmax(700px,1fr) 450px;gap:12px}
-  .topbar{height:66px}
-  .panel-title{font-size:12px}
-  .metric-label,.metric-value,.module-list .status-pill > span:last-child::after,.module-list .status-pill > span:last-child::before,.event-list,.log-console{font-size:10px}
-  .ev-core-mark{width:340px;height:340px}
-}
-
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
