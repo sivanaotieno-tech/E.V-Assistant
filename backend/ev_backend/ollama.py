@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -35,7 +40,77 @@ def get_status(endpoint: str) -> dict[str, Any]:
             "models": [],
             "runningModels": [],
             "error": str(exc),
+            "installHint": "Install Ollama and restart E.V., or start 'ollama serve'.",
         }
+
+
+def _find_ollama() -> str | None:
+    candidates: list[Path] = []
+    found = shutil.which("ollama")
+    if found:
+        candidates.append(Path(found))
+
+    local_app_data = os.getenv("LOCALAPPDATA")
+    program_files = os.getenv("ProgramFiles")
+    if local_app_data:
+        candidates.append(Path(local_app_data) / "Programs" / "Ollama" / "ollama.exe")
+    if program_files:
+        candidates.append(Path(program_files) / "Ollama" / "ollama.exe")
+
+    for candidate in candidates:
+        try:
+            if candidate.exists() and candidate.is_file():
+                return str(candidate)
+        except OSError:
+            continue
+    return None
+
+
+def ensure_running(endpoint: str) -> dict[str, Any]:
+    status = get_status(endpoint)
+    if status.get("online"):
+        return {"started": False, **status}
+
+    executable = _find_ollama()
+    if not executable:
+        return {
+            "started": False,
+            **status,
+            "errorCode": "OLLAMA_NOT_INSTALLED",
+            "installHint": "Install Ollama from ollama.com, then restart E.V.",
+        }
+
+    try:
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen(
+            [executable, "serve"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        return {
+            "started": False,
+            **status,
+            "errorCode": "OLLAMA_START_FAILED",
+            "error": str(exc),
+        }
+
+    for _ in range(12):
+        time.sleep(0.25)
+        status = get_status(endpoint)
+        if status.get("online"):
+            return {"started": True, **status}
+
+    return {
+        "started": True,
+        **status,
+        "errorCode": "OLLAMA_START_TIMEOUT",
+        "installHint": "Ollama was started, but the local API did not become ready yet.",
+    }
 
 
 def chat(
