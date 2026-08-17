@@ -25,6 +25,16 @@ export interface OllamaStatus {
   models: string[];
   runningModels: string[];
   error?: string;
+  errorCode?: string;
+  installHint?: string;
+  started?: boolean;
+}
+
+export interface ComponentStatus {
+  backend: boolean;
+  sqlite: boolean;
+  whisper: boolean;
+  tts: boolean;
 }
 
 export interface ChatMessage {
