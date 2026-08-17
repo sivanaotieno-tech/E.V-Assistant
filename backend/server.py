@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 from pathlib import Path
@@ -22,7 +21,7 @@ from ev_backend.tools import execute, preview_tool_call
 
 
 db.init_db()
-app = FastAPI(title="E.V. Local Backend", version="1.2.0")
+app = FastAPI(title="E.V. Local Backend", version="1.2.1")
 app.middleware("http")(companion_auth)
 app.add_middleware(
     CORSMiddleware,
@@ -69,12 +68,7 @@ class ScreenAnalyzeRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {
-        "ok": True,
-        "service": "E.V. Local Backend",
-        "pid": os.getpid(),
-        "networkMode": BACKEND_HOST != "127.0.0.1",
-    }
+    return {"ok": True, "service": "E.V. Local Backend", "pid": os.getpid(), "networkMode": BACKEND_HOST != "127.0.0.1"}
 
 
 @app.get("/api/system")
@@ -101,9 +95,6 @@ def ollama_ensure() -> dict[str, Any]:
 
 @app.get("/api/components/status")
 def components_status() -> dict[str, bool]:
-    whisper_ok = False
-    tts_ok = False
-
     try:
         import faster_whisper  # noqa: F401
         whisper_ok = True
@@ -116,20 +107,14 @@ def components_status() -> dict[str, bool]:
     except Exception:
         tts_ok = False
 
-    sqlite_ok = False
     try:
-        with db.get_connection() as connection:
-            connection.execute("SELECT 1").fetchone()
+        with db.connection() as conn:
+            conn.execute("SELECT 1").fetchone()
         sqlite_ok = True
     except Exception:
         sqlite_ok = False
 
-    return {
-        "backend": True,
-        "sqlite": sqlite_ok,
-        "whisper": whisper_ok,
-        "tts": tts_ok,
-    }
+    return {"backend": True, "sqlite": sqlite_ok, "whisper": whisper_ok, "tts": tts_ok}
 
 
 @app.get("/api/settings")
@@ -172,17 +157,7 @@ def remove_memory(memory_id: int) -> dict[str, bool]:
 @app.get("/api/permissions")
 def permissions() -> dict[str, str]:
     result: dict[str, str] = {}
-    for key in [
-        "delete_file",
-        "move_files",
-        "install_software",
-        "system_shutdown",
-        "terminal_command",
-        "write_text",
-        "mouse_automation",
-        "keyboard_automation",
-        "send_message",
-    ]:
+    for key in ["delete_file", "move_files", "install_software", "system_shutdown", "terminal_command", "write_text", "mouse_automation", "keyboard_automation", "send_message"]:
         result[key] = db.permission_mode(key)
     return result
 
@@ -200,28 +175,17 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
     settings = db.get_settings()
     endpoint = str(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT)
     model = payload.model or str(settings.get("model") or "").strip()
-
     if not model:
         status = get_status(endpoint)
         if not status.get("online"):
             status = ensure_running(endpoint)
         model = (status.get("runningModels") or status.get("models") or [""])[0]
-
     if not model:
-        raise HTTPException(
-            status_code=503,
-            detail="No local Ollama model is configured or installed. Open Settings or run 'ollama list'.",
-        )
+        raise HTTPException(status_code=503, detail="No local Ollama model is configured or installed. Open Settings or run 'ollama list'.")
 
     db.add_message("user", payload.text)
-    history = payload.history[-30:]
-    result = run_agent(endpoint, model, payload.text, payload.language, history, payload.approvedCalls)
-    return {
-        "content": result.content,
-        "confirmations": result.confirmations,
-        "events": result.events,
-        "model": model,
-    }
+    result = run_agent(endpoint, model, payload.text, payload.language, payload.history[-30:], payload.approvedCalls)
+    return {"content": result.content, "confirmations": result.confirmations, "events": result.events, "model": model}
 
 
 @app.post("/api/tools/preview")
@@ -276,20 +240,10 @@ def analyze_screen(payload: ScreenAnalyzeRequest) -> dict[str, Any]:
     if not model:
         raise HTTPException(status_code=400, detail="Select a local vision-capable Ollama model first.")
     screenshot = execute("screenshot", {})
-    response = ollama_chat(
-        endpoint,
-        model,
-        [{
-            "role": "user",
-            "content": f"Describe what is visible on my screen. Be concise and answer in {'Turkish' if payload.language == 'tr' else 'English'}.",
-            "images": [screenshot["base64"]],
-        }],
-        tools=None,
-    )
+    response = ollama_chat(endpoint, model, [{"role": "user", "content": f"Describe what is visible on my screen. Be concise and answer in {'Turkish' if payload.language == 'tr' else 'English'}.", "images": [screenshot["base64"]]}], tools=None)
     return {"content": response.get("message", {}).get("content", ""), "model": model}
 
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("server:app", host=BACKEND_HOST, port=BACKEND_PORT, reload=False)
