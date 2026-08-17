@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from ev_backend import db
 from ev_backend.agent import run_agent
 from ev_backend.config import BACKEND_HOST, BACKEND_PORT, EV_ALLOWED_ORIGINS, OLLAMA_ENDPOINT
-from ev_backend.ollama import chat as ollama_chat, get_status
+from ev_backend.ollama import chat as ollama_chat, ensure_running, get_status
 from ev_backend.security import companion_auth
 from ev_backend.speech import synthesize, transcribe_file, voices
 from ev_backend.system import collect_metrics, list_processes
@@ -88,6 +88,33 @@ def ollama_status() -> dict[str, Any]:
     return get_status(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT)
 
 
+@app.post("/api/ollama/ensure")
+def ollama_ensure() -> dict[str, Any]:
+    settings = db.get_settings()
+    return ensure_running(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT)
+
+
+@app.get("/api/components/status")
+def component_status() -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "backend": True,
+        "sqlite": True,
+        "whisper": False,
+        "tts": False,
+    }
+    try:
+        import faster_whisper  # noqa: F401
+        status["whisper"] = True
+    except Exception:
+        pass
+    try:
+        import pyttsx3  # noqa: F401
+        status["tts"] = True
+    except Exception:
+        pass
+    return status
+
+
 @app.get("/api/settings")
 def settings() -> dict[str, Any]:
     return db.get_settings()
@@ -146,10 +173,10 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
     settings = db.get_settings()
     model = payload.model or str(settings.get("model") or "").strip()
     if not model:
-        status = get_status(str(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT))
+        status = ensure_running(str(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT))
         model = (status.get("runningModels") or status.get("models") or [""])[0]
     if not model:
-        raise HTTPException(status_code=503, detail="No local Ollama model is configured or installed.")
+        raise HTTPException(status_code=503, detail="No local Ollama model is configured or installed. Install/pull a model first.")
     db.add_message("user", payload.text)
     history = payload.history[-30:]
     result = run_agent(str(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT), model, payload.text, payload.language, history, payload.approvedCalls)
