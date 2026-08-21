@@ -5,6 +5,29 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+def _load_dotenv_files() -> None:
+    for filename in ('.env', '.env.local'):
+        path = BASE_DIR / filename
+        if not path.exists():
+            continue
+        try:
+            for raw in path.read_text(encoding='utf-8').splitlines():
+                line = raw.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        except OSError:
+            continue
+
+
+_load_dotenv_files()
+
 DATA_DIR = Path(os.getenv("EV_DATA_DIR", str(BASE_DIR / "database")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "ev.db"
@@ -40,7 +63,7 @@ You are calm, concise, technically competent, slightly witty, and proactive only
 Never claim to have performed an action unless a tool result confirms it.
 Never invent computer telemetry. Use tools for real system facts.
 Use the supplied long-term memory and recent conversation context when relevant, but do not mention internal database mechanics unless asked.
-You operate locally for AI inference and PC control. Supabase is E.V.'s persistent application database; never send secrets or private files to third parties.
+AI inference and PC control remain local. Supabase is E.V.'s persistent application database; never send secrets or private files to third parties.
 When a requested action is destructive, sensitive, or system-altering, use the registered tool and let E.V.'s permission layer handle confirmation.
 The user may speak English or Turkish. Respond in the user's language unless settings indicate otherwise.
 """.strip()
