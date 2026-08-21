@@ -5,11 +5,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from ev_backend import db
 from ev_backend.agent import run_agent
 from ev_backend.config import BACKEND_HOST, BACKEND_PORT, EV_ALLOWED_ORIGINS, OLLAMA_ENDPOINT
 from ev_backend.ollama import chat as ollama_chat, ensure_running, get_status
@@ -19,7 +20,7 @@ from ev_backend.system import collect_metrics, list_processes
 from ev_backend.tools import execute, preview_tool_call
 
 
-app = FastAPI(title="E.V. Local Backend", version="2.2.0")
+app = FastAPI(title="E.V. Local Backend", version="2.3.0")
 app.middleware("http")(companion_auth)
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +29,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*", "Authorization"],
 )
+
+
+@app.middleware("http")
+async def supabase_context(request: Request, call_next):
+    authorization = request.headers.get("authorization", "")
+    token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    handle = db.set_request_token(token)
+    try:
+        return await call_next(request)
+    finally:
+        db.reset_request_token(handle)
 
 
 class ChatRequest(BaseModel):
@@ -54,7 +66,13 @@ class ScreenAnalyzeRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "service": "E.V. Local Backend", "pid": os.getpid(), "networkMode": BACKEND_HOST != "127.0.0.1"}
+    return {
+        "ok": True,
+        "service": "E.V. Local Backend",
+        "pid": os.getpid(),
+        "networkMode": BACKEND_HOST != "127.0.0.1",
+        "supabasePersistence": db.supabase_enabled(),
+    }
 
 
 @app.get("/api/system")
@@ -98,7 +116,7 @@ def components_status() -> dict[str, bool]:
     except Exception:
         tts_ok = False
 
-    return {"backend": True, "sqlite": False, "whisper": whisper_ok, "tts": tts_ok}
+    return {"backend": True, "sqlite": True, "whisper": whisper_ok, "tts": tts_ok}
 
 
 @app.post("/api/chat")
@@ -113,6 +131,12 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
     if not model:
         raise HTTPException(status_code=503, detail="No local Ollama model is configured or installed. Run 'ollama list' and select a model in E.V. Settings.")
 
+    try:
+        db.add_message("user", payload.text)
+    except Exception:
+        # AI remains usable if persistence is temporarily unavailable.
+        pass
+
     result = run_agent(
         endpoint,
         model,
@@ -123,6 +147,24 @@ def chat(payload: ChatRequest) -> dict[str, Any]:
         payload.memoryContext,
         payload.permissionModes,
     )
+
+    if result.memory_write:
+        try:
+            db.upsert_memory(
+                result.memory_write["category"],
+                result.memory_write["key"],
+                result.memory_write["value"],
+                int(result.memory_write.get("importance", 8)),
+            )
+        except Exception:
+            pass
+
+    if result.content:
+        try:
+            db.add_message("assistant", result.content)
+        except Exception:
+            pass
+
     return {
         "content": result.content,
         "confirmations": result.confirmations,
@@ -195,7 +237,7 @@ def analyze_screen(payload: ScreenAnalyzeRequest) -> dict[str, Any]:
 
 @app.get("/api/database/status")
 def database_status() -> dict[str, Any]:
-    return {"provider": "supabase", "persistent": True, "localSqlite": False}
+    return {"provider": "supabase", "persistent": True, "localSqlite": True}
 
 
 if __name__ == "__main__":
