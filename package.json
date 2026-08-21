@@ -22,7 +22,7 @@
     "check:tauri": "node scripts/check-tauri.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.0",
+    "@supabase/supabase-js": "2.112.3",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "react": "^19.1.1",
