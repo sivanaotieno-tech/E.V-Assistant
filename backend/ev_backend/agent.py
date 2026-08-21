@@ -17,18 +17,43 @@ class AgentResult:
         self.memory_write = memory_write
 
 
+def _clean_key(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_]+", "_", value.strip().lower()).strip("_")[:80] or "user_fact"
+
+
 def _extract_memory_intent(text: str) -> tuple[str, str, str] | None:
-    patterns = [
-        r"^remember(?: that)? (?:my )?favorite (?:language|programming language) is (.+)$",
-        r"^remember(?: that)? (.+?) is (.+)$",
-    ]
     low = text.strip()
-    for pattern in patterns:
+    patterns: list[tuple[str, str]] = [
+        (r"^remember(?: that)? my (favorite|fav) (color|colour|food|game|movie|programming language|language) is (.+)$", "preference"),
+        (r"^remember(?: that)? my name is (.+)$", "name"),
+        (r"^remember(?: that)? i (?:prefer|like|love|use) (.+)$", "preference_general"),
+        (r"^remember(?: that)? (.+?) is (.+)$", "fact"),
+        (r"^remember(?: that)? (.+)$", "note"),
+        (r"^hat[ıi]rla(?: ki)? benim (favori|sevdiğim) (.+?) (.+)$", "tr_preference"),
+        (r"^hat[ıi]rla(?: ki)? benim adım (.+)$", "tr_name"),
+        (r"^hat[ıi]rla(?: ki)? (.+?) (.+)$", "tr_fact"),
+    ]
+    for pattern, kind in patterns:
         match = re.match(pattern, low, re.IGNORECASE)
-        if match:
-            if pattern.startswith(r"^remember(?: that)? (?:my )?favorite"):
-                return "PREFERENCE", "favorite_programming_language", match.group(1).strip()
-            return "IMPORTANT_FACT", match.group(1).strip().replace(" ", "_"), match.group(2).strip()
+        if not match:
+            continue
+        groups = [g.strip() for g in match.groups() if g is not None]
+        if kind == "preference":
+            return "PREFERENCE", _clean_key(f"favorite_{groups[1]}"), groups[2]
+        if kind == "name":
+            return "USER_PROFILE", "name", groups[0]
+        if kind == "preference_general":
+            return "PREFERENCE", _clean_key(groups[0][:60]), groups[0]
+        if kind == "fact":
+            return "IMPORTANT_FACT", _clean_key(groups[0]), groups[1]
+        if kind == "note":
+            return "IMPORTANT_FACT", _clean_key(groups[0][:60]), groups[0]
+        if kind == "tr_preference":
+            return "PREFERENCE", _clean_key(groups[1]), groups[2]
+        if kind == "tr_name":
+            return "USER_PROFILE", "name", groups[0]
+        if kind == "tr_fact":
+            return "IMPORTANT_FACT", _clean_key(groups[0]), groups[1]
     return None
 
 
@@ -53,23 +78,15 @@ def run_agent(
         events.append(f"memory        queued {key}")
 
     stored = memory_context or []
-    if stored:
-        lines = [f"- [{m.get('category', 'FACT')}] {m.get('key', '')}: {m.get('value', '')}" for m in stored]
-        memory_text = "Cloud-backed long-term memory:\n" + "\n".join(lines)
-    else:
-        memory_text = "No stored long-term memories are currently available."
-
-    system_context = {
-        "role": "system",
-        "content": f"{SYSTEM_PROMPT}\n\n{memory_text}\n\nLanguage preference: {language}.",
-    }
-    local_messages = [system_context, *messages, {"role": "user", "content": user_text}]
+    lines = [f"- [{m.get('category', 'FACT')}] {m.get('key', '')}: {m.get('value', '')}" for m in stored[:40]]
+    memory_text = "Cloud-backed long-term memory:\n" + "\n".join(lines) if lines else "No stored long-term memories are currently available."
+    system_context = {"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{memory_text}\n\nUse recent conversation naturally. Never invent memories.\nLanguage preference: {language}."}
+    local_messages = [system_context, *messages[-30:], {"role": "user", "content": user_text}]
     if approved_calls:
         for approved in approved_calls:
             local_messages.append({"role": "tool", "tool_name": approved["name"], "content": json.dumps(approved["result"], ensure_ascii=False)})
 
     modes = permission_modes or {}
-
     for _ in range(max_turns):
         response = chat(endpoint, model, local_messages, tools=ollama_tool_schemas())
         message = response.get("message", {})
@@ -106,5 +123,4 @@ def run_agent(
                 events.append(f"tool           {name} failed")
         if confirmations:
             return AgentResult(content or "I need your approval before I perform that action.", confirmations, events, memory_write)
-
     return AgentResult("I could not complete that request within the local tool cycle.", confirmations, events, memory_write)
