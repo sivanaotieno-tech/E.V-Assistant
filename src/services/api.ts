@@ -180,18 +180,9 @@ async function messages(): Promise<ChatMessage[]> {
   return (data ?? []).map((item) => ({ id: Number(item.id), role: item.role as ChatMessage['role'], content: item.content, createdAt: item.created_at, toolName: item.tool_name ?? undefined }));
 }
 
-async function saveMessage(message: Pick<ChatMessage, 'role' | 'content' | 'toolName'>) {
-  const client = await requireSupabase();
-  const { error } = await client.from('ev_messages').insert({ role: message.role, content: message.content, tool_name: message.toolName ?? null });
-  if (error) throw new Error(`Supabase message write failed: ${error.message}`);
-}
-
 async function clearMessages() {
   const client = await requireSupabase();
-  const { data: existing, error: readError } = await client.from('ev_messages').select('id');
-  if (readError) throw new Error(`Supabase message read failed: ${readError.message}`);
-  if (!existing?.length) return { ok: true };
-  const { error } = await client.from('ev_messages').delete().in('id', existing.map((row) => row.id));
+  const { error } = await client.from('ev_messages').delete().neq('id', 0);
   if (error) throw new Error(`Supabase message delete failed: ${error.message}`);
   return { ok: true };
 }
@@ -262,7 +253,7 @@ export const api = {
     const config = await settings();
     const storedMemories = await memories();
     const permissionModes = await permissions();
-    const result = await request<{ content: string; confirmations: ToolConfirmation[]; events: string[]; model: string; memoryWrite?: Pick<MemoryItem, 'category' | 'key' | 'value' | 'importance'> | null }>('/api/chat', {
+    return request<{ content: string; confirmations: ToolConfirmation[]; events: string[]; model: string; memoryWrite?: Pick<MemoryItem, 'category' | 'key' | 'value' | 'importance'> | null }>('/api/chat', {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -273,11 +264,6 @@ export const api = {
         permissionModes,
       }),
     });
-
-    await saveMessage({ role: 'user', content: payload.text });
-    if (result.content) await saveMessage({ role: 'assistant', content: result.content });
-    if (result.memoryWrite) await saveMemory(result.memoryWrite);
-    return result;
   },
   previewTool: (name: string, args: Record<string, unknown>) => request<ToolConfirmation>('/api/tools/preview', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ name, args }) }),
   executeTool: (name: string, args: Record<string, unknown>) => request<{ ok: boolean; [key: string]: unknown }>('/api/tools/execute', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ name, args }) }),
@@ -302,7 +288,6 @@ export const api = {
 };
 
 export async function initializeSupabase() {
-  await requireSupabase();
   const client = await requireSupabase();
   const { error: settingsError } = await client.from('ev_settings').upsert({ settings: DEFAULT_SETTINGS }, { onConflict: 'user_id', ignoreDuplicates: true } as never);
   if (settingsError) throw new Error(`Supabase initialization failed: ${settingsError.message}`);
