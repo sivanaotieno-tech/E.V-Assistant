@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from ev_backend import db
 from ev_backend.agent import run_agent
 from ev_backend.config import BACKEND_HOST, BACKEND_PORT, EV_ALLOWED_ORIGINS, OLLAMA_ENDPOINT
 from ev_backend.ollama import chat as ollama_chat, ensure_running, get_status
@@ -20,8 +19,7 @@ from ev_backend.system import collect_metrics, list_processes
 from ev_backend.tools import execute, preview_tool_call
 
 
-db.init_db()
-app = FastAPI(title="E.V. Local Backend", version="1.2.1")
+app = FastAPI(title="E.V. Local Backend", version="2.2.0")
 app.middleware("http")(companion_auth)
 app.add_middleware(
     CORSMiddleware,
@@ -38,6 +36,9 @@ class ChatRequest(BaseModel):
     language: str = "auto"
     history: list[dict[str, Any]] = Field(default_factory=list)
     approvedCalls: list[dict[str, Any]] = Field(default_factory=list)
+    memoryContext: list[dict[str, Any]] = Field(default_factory=list)
+    permissionModes: dict[str, str] = Field(default_factory=dict)
+    ollamaEndpoint: str = OLLAMA_ENDPOINT
 
 
 class ToolExecuteRequest(BaseModel):
@@ -45,25 +46,10 @@ class ToolExecuteRequest(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
-class SettingsUpdate(BaseModel):
-    values: dict[str, Any]
-
-
-class MemoryWrite(BaseModel):
-    category: str
-    key: str
-    value: str
-    importance: int = Field(default=5, ge=1, le=10)
-
-
-class PermissionUpdate(BaseModel):
-    actionType: str
-    mode: str
-
-
 class ScreenAnalyzeRequest(BaseModel):
     model: str = ""
     language: str = "auto"
+    ollamaEndpoint: str = OLLAMA_ENDPOINT
 
 
 @app.get("/health")
@@ -81,16 +67,21 @@ def processes() -> list[dict[str, Any]]:
     return list_processes(50)
 
 
+def _endpoint(value: str | None) -> str:
+    endpoint = (value or OLLAMA_ENDPOINT).strip().rstrip("/")
+    if not endpoint.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Invalid Ollama endpoint.")
+    return endpoint
+
+
 @app.get("/api/ollama/status")
-def ollama_status() -> dict[str, Any]:
-    settings = db.get_settings()
-    return get_status(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT)
+def ollama_status(endpoint: str | None = None) -> dict[str, Any]:
+    return get_status(_endpoint(endpoint))
 
 
 @app.post("/api/ollama/ensure")
-def ollama_ensure() -> dict[str, Any]:
-    settings = db.get_settings()
-    return ensure_running(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT)
+def ollama_ensure(endpoint: str | None = None) -> dict[str, Any]:
+    return ensure_running(_endpoint(endpoint))
 
 
 @app.get("/api/components/status")
@@ -107,85 +98,38 @@ def components_status() -> dict[str, bool]:
     except Exception:
         tts_ok = False
 
-    try:
-        with db.connection() as conn:
-            conn.execute("SELECT 1").fetchone()
-        sqlite_ok = True
-    except Exception:
-        sqlite_ok = False
-
-    return {"backend": True, "sqlite": sqlite_ok, "whisper": whisper_ok, "tts": tts_ok}
-
-
-@app.get("/api/settings")
-def settings() -> dict[str, Any]:
-    return db.get_settings()
-
-
-@app.put("/api/settings")
-def update_settings(payload: SettingsUpdate) -> dict[str, Any]:
-    return db.update_settings(payload.values)
-
-
-@app.get("/api/messages")
-def messages() -> list[dict[str, Any]]:
-    return db.list_messages(120)
-
-
-@app.delete("/api/messages")
-def clear_messages() -> dict[str, bool]:
-    db.clear_messages()
-    return {"ok": True}
-
-
-@app.get("/api/memories")
-def memories(q: str = "") -> list[dict[str, Any]]:
-    return db.list_memories(q, 200)
-
-
-@app.post("/api/memories")
-def create_memory(payload: MemoryWrite) -> dict[str, Any]:
-    return db.upsert_memory(payload.category, payload.key, payload.value, payload.importance)
-
-
-@app.delete("/api/memories/{memory_id}")
-def remove_memory(memory_id: int) -> dict[str, bool]:
-    db.delete_memory(memory_id)
-    return {"ok": True}
-
-
-@app.get("/api/permissions")
-def permissions() -> dict[str, str]:
-    result: dict[str, str] = {}
-    for key in ["delete_file", "move_files", "install_software", "system_shutdown", "terminal_command", "write_text", "mouse_automation", "keyboard_automation", "send_message"]:
-        result[key] = db.permission_mode(key)
-    return result
-
-
-@app.put("/api/permissions")
-def update_permission(payload: PermissionUpdate) -> dict[str, bool]:
-    if payload.mode not in {"block", "confirm", "always_allow"}:
-        raise HTTPException(status_code=400, detail="Invalid permission mode")
-    db.set_permission_mode(payload.actionType, payload.mode)
-    return {"ok": True}
+    return {"backend": True, "sqlite": False, "whisper": whisper_ok, "tts": tts_ok}
 
 
 @app.post("/api/chat")
 def chat(payload: ChatRequest) -> dict[str, Any]:
-    settings = db.get_settings()
-    endpoint = str(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT)
-    model = payload.model or str(settings.get("model") or "").strip()
+    endpoint = _endpoint(payload.ollamaEndpoint)
+    model = payload.model.strip()
     if not model:
         status = get_status(endpoint)
         if not status.get("online"):
             status = ensure_running(endpoint)
         model = (status.get("runningModels") or status.get("models") or [""])[0]
     if not model:
-        raise HTTPException(status_code=503, detail="No local Ollama model is configured or installed. Open Settings or run 'ollama list'.")
+        raise HTTPException(status_code=503, detail="No local Ollama model is configured or installed. Run 'ollama list' and select a model in E.V. Settings.")
 
-    db.add_message("user", payload.text)
-    result = run_agent(endpoint, model, payload.text, payload.language, payload.history[-30:], payload.approvedCalls)
-    return {"content": result.content, "confirmations": result.confirmations, "events": result.events, "model": model}
+    result = run_agent(
+        endpoint,
+        model,
+        payload.text,
+        payload.language,
+        payload.history[-30:],
+        payload.approvedCalls,
+        payload.memoryContext,
+        payload.permissionModes,
+    )
+    return {
+        "content": result.content,
+        "confirmations": result.confirmations,
+        "events": result.events,
+        "model": model,
+        "memoryWrite": result.memory_write,
+    }
 
 
 @app.post("/api/tools/preview")
@@ -205,8 +149,10 @@ def get_voices() -> list[dict[str, str]]:
 
 @app.post("/api/transcribe")
 async def transcribe(audio: UploadFile = File(...), language: str = "auto", model: str = "small") -> dict[str, Any]:
+    temp_dir = Path(tempfile.gettempdir()) / "ev-assistant"
+    temp_dir.mkdir(parents=True, exist_ok=True)
     suffix = Path(audio.filename or "audio.webm").suffix or ".webm"
-    fd, temp_name = tempfile.mkstemp(prefix="ev_stt_", suffix=suffix, dir=db.DB_PATH.parent / "tmp")
+    fd, temp_name = tempfile.mkstemp(prefix="ev_stt_", suffix=suffix, dir=temp_dir)
     os.close(fd)
     path = Path(temp_name)
     try:
@@ -234,14 +180,22 @@ def screen() -> dict[str, Any]:
 
 @app.post("/api/screen/analyze")
 def analyze_screen(payload: ScreenAnalyzeRequest) -> dict[str, Any]:
-    settings = db.get_settings()
-    endpoint = str(settings.get("ollamaEndpoint") or OLLAMA_ENDPOINT)
-    model = payload.model or str(settings.get("visionModel") or "")
+    model = payload.model.strip()
     if not model:
         raise HTTPException(status_code=400, detail="Select a local vision-capable Ollama model first.")
     screenshot = execute("screenshot", {})
-    response = ollama_chat(endpoint, model, [{"role": "user", "content": f"Describe what is visible on my screen. Be concise and answer in {'Turkish' if payload.language == 'tr' else 'English'}.", "images": [screenshot["base64"]]}], tools=None)
+    response = ollama_chat(
+        _endpoint(payload.ollamaEndpoint),
+        model,
+        [{"role": "user", "content": f"Describe what is visible on my screen. Be concise and answer in {'Turkish' if payload.language == 'tr' else 'English'}.", "images": [screenshot["base64"]]}],
+        tools=None,
+    )
     return {"content": response.get("message", {}).get("content", ""), "model": model}
+
+
+@app.get("/api/database/status")
+def database_status() -> dict[str, Any]:
+    return {"provider": "supabase", "persistent": True, "localSqlite": False}
 
 
 if __name__ == "__main__":
