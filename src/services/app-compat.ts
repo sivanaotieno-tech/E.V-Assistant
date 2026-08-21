@@ -1,25 +1,20 @@
-import { setLegacyPermission } from './supabase-permissions';
+import { getSupabaseAccessToken } from './supabase';
 
 const nativeFetch = window.fetch.bind(window);
 
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-  if (url.includes('/api/permissions') && (init?.method ?? 'GET').toUpperCase() === 'PUT') {
+  const isBackendApi = /\/api\//.test(url) && !/supabase\.co/i.test(url);
+  const headers = new Headers(init?.headers);
+
+  if (isBackendApi && !headers.has('Authorization')) {
     try {
-      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { actionType?: string; mode?: string } : {};
-      if (body.actionType && body.mode) {
-        await setLegacyPermission(body.actionType, body.mode);
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-    } catch (error) {
-      return new Response(JSON.stringify({ detail: error instanceof Error ? error.message : String(error) }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const token = await getSupabaseAccessToken();
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+    } catch {
+      // The backend can still serve non-persistent local operations.
     }
   }
-  return nativeFetch(input, init);
+
+  return nativeFetch(input, { ...init, headers });
 };
