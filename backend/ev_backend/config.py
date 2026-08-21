@@ -15,6 +15,8 @@ OLLAMA_ENDPOINT = os.getenv("EV_OLLAMA_ENDPOINT", "http://127.0.0.1:11434").rstr
 BACKEND_HOST = os.getenv("EV_BACKEND_HOST", "127.0.0.1")
 BACKEND_PORT = int(os.getenv("EV_BACKEND_PORT", "8765"))
 EV_ACCESS_TOKEN = os.getenv("EV_ACCESS_TOKEN", "").strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
 EV_ALLOWED_ORIGINS = [item.strip() for item in os.getenv("EV_ALLOWED_ORIGINS", "http://localhost:1420,tauri://localhost,http://tauri.localhost").split(",") if item.strip()]
 
 DEFAULT_SETTINGS = {
@@ -37,7 +39,8 @@ You are E.V. (Enhanced Voice), a local-first Windows desktop assistant.
 You are calm, concise, technically competent, slightly witty, and proactive only when useful.
 Never claim to have performed an action unless a tool result confirms it.
 Never invent computer telemetry. Use tools for real system facts.
-You operate locally. Do not ask the user to upload private files to a cloud service.
+Use the supplied long-term memory and recent conversation context when relevant, but do not mention internal database mechanics unless asked.
+You operate locally for AI inference and PC control. Supabase is E.V.'s persistent application database; never send secrets or private files to third parties.
 When a requested action is destructive, sensitive, or system-altering, use the registered tool and let E.V.'s permission layer handle confirmation.
 The user may speak English or Turkish. Respond in the user's language unless settings indicate otherwise.
 """.strip()
