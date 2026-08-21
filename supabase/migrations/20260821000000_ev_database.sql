@@ -1,5 +1,3 @@
-create extension if not exists pgcrypto;
-
 create table if not exists public.ev_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   settings jsonb not null default '{}'::jsonb,
@@ -19,7 +17,7 @@ create index if not exists ev_messages_user_created_idx
   on public.ev_messages(user_id, created_at desc);
 
 create table if not exists public.ev_memories (
-  id uuid primary key default gen_random_uuid(),
+  id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   category text not null,
   memory_key text not null,
