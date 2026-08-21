@@ -31,6 +31,13 @@ export async function ensureSupabaseUser(): Promise<User | null> {
   return sessionPromise;
 }
 
+export async function getSupabaseAccessToken(): Promise<string> {
+  if (!supabase) return '';
+  await ensureSupabaseUser();
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? '';
+}
+
 export function isSupabaseConfigured(): boolean {
   return Boolean(supabase);
 }
