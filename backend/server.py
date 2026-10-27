@@ -21,6 +21,7 @@ from ev_backend.tools import execute, preview_tool_call
 
 
 app = FastAPI(title="E.V. Local Backend", version="2.3.0")
+db.init_db()
 app.middleware("http")(companion_auth)
 app.add_middleware(
     CORSMiddleware,
@@ -238,6 +239,72 @@ def analyze_screen(payload: ScreenAnalyzeRequest) -> dict[str, Any]:
 @app.get("/api/database/status")
 def database_status() -> dict[str, Any]:
     return {"provider": "supabase", "persistent": True, "localSqlite": True}
+
+
+
+class LocalMemoryRequest(BaseModel):
+    category: str = Field(min_length=1, max_length=80)
+    key: str = Field(min_length=1, max_length=160)
+    value: str = Field(min_length=1, max_length=4000)
+    importance: int = Field(default=5, ge=1, le=10)
+
+
+class LocalPermissionRequest(BaseModel):
+    action_type: str = Field(min_length=1, max_length=100)
+    mode: str = Field(pattern="^(block|confirm|always_allow)$")
+
+
+@app.get("/api/local/settings")
+def local_settings() -> dict[str, Any]:
+    return db.get_settings()
+
+
+@app.put("/api/local/settings")
+def local_update_settings(values: dict[str, Any]) -> dict[str, Any]:
+    return db.update_settings(values)
+
+
+@app.get("/api/local/messages")
+def local_messages() -> list[dict[str, Any]]:
+    return db.list_messages(120)
+
+
+@app.delete("/api/local/messages")
+def local_clear_messages() -> dict[str, bool]:
+    db.clear_messages()
+    return {"ok": True}
+
+
+@app.get("/api/local/memories")
+def local_memories(q: str = "") -> list[dict[str, Any]]:
+    return db.list_memories(q, 200)
+
+
+@app.post("/api/local/memories")
+def local_save_memory(payload: LocalMemoryRequest) -> dict[str, Any]:
+    return db.upsert_memory(payload.category, payload.key, payload.value, payload.importance)
+
+
+@app.delete("/api/local/memories/{memory_id}")
+def local_delete_memory(memory_id: int) -> dict[str, bool]:
+    db.delete_memory(memory_id)
+    return {"ok": True}
+
+
+@app.get("/api/local/permissions")
+def local_permissions() -> dict[str, str]:
+    defaults = {
+        "delete_file": "confirm", "move_files": "confirm", "install_software": "confirm",
+        "system_shutdown": "confirm", "terminal_command": "block", "write_text": "confirm",
+        "mouse_automation": "confirm", "keyboard_automation": "confirm", "send_message": "confirm",
+    }
+    return {key: db.permission_mode(key) or value for key, value in defaults.items()}
+
+
+@app.put("/api/local/permissions")
+def local_set_permission(payload: LocalPermissionRequest) -> dict[str, bool]:
+    db.set_permission_mode(payload.action_type, payload.mode)
+    return {"ok": True}
 
 
 if __name__ == "__main__":
