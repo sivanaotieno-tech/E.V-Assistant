@@ -36,6 +36,9 @@ app.add_middleware(
 async def supabase_context(request: Request, call_next):
     authorization = request.headers.get("authorization", "")
     token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    # Local fallback endpoints must always use SQLite, even if a stale cloud token is present.
+    if request.url.path.startswith("/api/local/"):
+        token = ""
     handle = db.set_request_token(token)
     try:
         return await call_next(request)
