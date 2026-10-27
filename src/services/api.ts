@@ -158,73 +158,109 @@ async function requireSupabase() {
 }
 
 async function settings(): Promise<BackendConfig> {
-  const client = await requireSupabase();
-  const { data, error } = await client.from('ev_settings').select('settings').maybeSingle();
-  if (error) throw new Error(`Supabase settings read failed: ${error.message}`);
-  return { ...DEFAULT_SETTINGS, ...((data?.settings ?? {}) as Partial<BackendConfig>) };
+  try {
+    const client = await requireSupabase();
+    const { data, error } = await client.from('ev_settings').select('settings').maybeSingle();
+    if (error) throw new Error(error.message);
+    return { ...DEFAULT_SETTINGS, ...((data?.settings ?? {}) as Partial<BackendConfig>) };
+  } catch {
+    return { ...DEFAULT_SETTINGS, ...(await request<Partial<BackendConfig>>('/api/local/settings')) };
+  }
 }
 
 async function updateSettings(values: Partial<BackendConfig>): Promise<BackendConfig> {
-  const client = await requireSupabase();
   const current = await settings();
   const next = { ...current, ...values };
-  const { error } = await client.from('ev_settings').upsert({ settings: next }, { onConflict: 'user_id' });
-  if (error) throw new Error(`Supabase settings write failed: ${error.message}`);
-  return next;
+  try {
+    const client = await requireSupabase();
+    const { error } = await client.from('ev_settings').upsert({ settings: next }, { onConflict: 'user_id' });
+    if (error) throw new Error(error.message);
+    return next;
+  } catch {
+    return request<BackendConfig>('/api/local/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) });
+  }
 }
 
 async function messages(): Promise<ChatMessage[]> {
-  const client = await requireSupabase();
-  const { data, error } = await client.from('ev_messages').select('id, role, content, created_at, tool_name').order('created_at', { ascending: true }).limit(120);
-  if (error) throw new Error(`Supabase message read failed: ${error.message}`);
-  return (data ?? []).map((item) => ({ id: Number(item.id), role: item.role as ChatMessage['role'], content: item.content, createdAt: item.created_at, toolName: item.tool_name ?? undefined }));
+  try {
+    const client = await requireSupabase();
+    const { data, error } = await client.from('ev_messages').select('id, role, content, created_at, tool_name').order('created_at', { ascending: true }).limit(120);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((item) => ({ id: Number(item.id), role: item.role as ChatMessage['role'], content: item.content, createdAt: item.created_at, toolName: item.tool_name ?? undefined }));
+  } catch {
+    return request<ChatMessage[]>('/api/local/messages');
+  }
 }
 
 async function clearMessages() {
-  const client = await requireSupabase();
-  const { error } = await client.from('ev_messages').delete().neq('id', 0);
-  if (error) throw new Error(`Supabase message delete failed: ${error.message}`);
-  return { ok: true };
+  try {
+    const client = await requireSupabase();
+    const { error } = await client.from('ev_messages').delete().neq('id', 0);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  } catch {
+    return request<{ ok: boolean }>('/api/local/messages', { method: 'DELETE' });
+  }
 }
 
 async function memories(q = ''): Promise<MemoryItem[]> {
-  const client = await requireSupabase();
-  let query = client.from('ev_memories').select('id, category, memory_key, value, importance, created_at, updated_at').order('updated_at', { ascending: false }).limit(200);
-  if (q.trim()) query = query.or(`memory_key.ilike.%${q.trim()}%,value.ilike.%${q.trim()}%,category.ilike.%${q.trim()}%`);
-  const { data, error } = await query;
-  if (error) throw new Error(`Supabase memory read failed: ${error.message}`);
-  return (data ?? []).map((item) => ({ id: item.id as unknown as number, category: item.category, key: item.memory_key, value: item.value, importance: item.importance, createdAt: item.created_at, updatedAt: item.updated_at }));
+  try {
+    const client = await requireSupabase();
+    let query = client.from('ev_memories').select('id, category, memory_key, value, importance, created_at, updated_at').order('updated_at', { ascending: false }).limit(200);
+    if (q.trim()) query = query.or(`memory_key.ilike.%${q.trim()}%,value.ilike.%${q.trim()}%,category.ilike.%${q.trim()}%`);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((item) => ({ id: item.id as unknown as number, category: item.category, key: item.memory_key, value: item.value, importance: item.importance, createdAt: item.created_at, updatedAt: item.updated_at }));
+  } catch {
+    return request<MemoryItem[]>(`/api/local/memories?q=${encodeURIComponent(q)}`);
+  }
 }
 
 async function saveMemory(memory: Pick<MemoryItem, 'category' | 'key' | 'value' | 'importance'>): Promise<MemoryItem> {
-  const client = await requireSupabase();
-  const { data, error } = await client.from('ev_memories').upsert({ category: memory.category, memory_key: memory.key, value: memory.value, importance: memory.importance }, { onConflict: 'user_id,category,memory_key' }).select('id, category, memory_key, value, importance, created_at, updated_at').single();
-  if (error) throw new Error(`Supabase memory write failed: ${error.message}`);
-  return { id: data.id as unknown as number, category: data.category, key: data.memory_key, value: data.value, importance: data.importance, createdAt: data.created_at, updatedAt: data.updated_at };
+  try {
+    const client = await requireSupabase();
+    const { data, error } = await client.from('ev_memories').upsert({ category: memory.category, memory_key: memory.key, value: memory.value, importance: memory.importance }, { onConflict: 'user_id,category,memory_key' }).select('id, category, memory_key, value, importance, created_at, updated_at').single();
+    if (error) throw new Error(error.message);
+    return { id: data.id as unknown as number, category: data.category, key: data.memory_key, value: data.value, importance: data.importance, createdAt: data.created_at, updatedAt: data.updated_at };
+  } catch {
+    return request<MemoryItem>('/api/local/memories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(memory) });
+  }
 }
 
 async function deleteMemory(id: number) {
-  const client = await requireSupabase();
-  const { error } = await client.from('ev_memories').delete().eq('id', id as unknown as string);
-  if (error) throw new Error(`Supabase memory delete failed: ${error.message}`);
-  return { ok: true };
+  try {
+    const client = await requireSupabase();
+    const { error } = await client.from('ev_memories').delete().eq('id', id as unknown as string);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  } catch {
+    return request<{ ok: boolean }>(`/api/local/memories/${id}`, { method: 'DELETE' });
+  }
 }
 
 async function permissions(): Promise<Record<string, string>> {
-  const client = await requireSupabase();
-  const { data, error } = await client.from('ev_permissions').select('action_type, mode');
-  if (error) throw new Error(`Supabase permissions read failed: ${error.message}`);
-  const result = { ...DEFAULT_PERMISSION_MODES };
-  for (const row of data ?? []) result[row.action_type] = row.mode;
-  return result;
+  try {
+    const client = await requireSupabase();
+    const { data, error } = await client.from('ev_permissions').select('action_type, mode');
+    if (error) throw new Error(error.message);
+    const result = { ...DEFAULT_PERMISSION_MODES };
+    for (const row of data ?? []) result[row.action_type] = row.mode;
+    return result;
+  } catch {
+    return { ...DEFAULT_PERMISSION_MODES, ...(await request<Record<string, string>>('/api/local/permissions')) };
+  }
 }
 
 async function setPermission(actionType: string, mode: string) {
   if (!['block', 'confirm', 'always_allow'].includes(mode)) throw new Error('Invalid permission mode.');
-  const client = await requireSupabase();
-  const { error } = await client.from('ev_permissions').upsert({ action_type: actionType, mode }, { onConflict: 'user_id,action_type' });
-  if (error) throw new Error(`Supabase permission write failed: ${error.message}`);
-  return { ok: true };
+  try {
+    const client = await requireSupabase();
+    const { error } = await client.from('ev_permissions').upsert({ action_type: actionType, mode }, { onConflict: 'user_id,action_type' });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  } catch {
+    return request<{ ok: boolean }>('/api/local/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action_type: actionType, mode }) });
+  }
 }
 
 export const api = {
